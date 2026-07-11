@@ -1,299 +1,224 @@
 package hospital.service;
 
-import hospital.db.DatabaseConnection;
 import hospital.exception.HospitalException;
+import hospital.factory.PersonFactory;
+import hospital.model.Doctor;
+import hospital.model.Patient;
+import hospital.persistence.AppointmentDAO;
+import hospital.persistence.BillDAO;
+import hospital.persistence.DoctorDAO;
+import hospital.persistence.MedicalRecordDAO;
+import hospital.persistence.PatientDAO;
+import hospital.persistence.ReportDAO;
+import hospital.persistence.StatisticsDAO;
 
-import java.sql.*;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.Map;
 
 /**
- * طبقة منطق الأعمال لنظام إدارة المستشفى.
+ * طبقة التطبيق (Application Layer) لنظام إدارة المستشفى.
  *
- * <p><b>المعمارية الرباعية الطبقات - Four Layer Architecture:</b></p>
+ * <p><b>المعمارية الرباعية الطبقات - Four-Layer Architecture (Lecture #6):</b></p>
  * <ul>
- *   <li>Layer 1: Presentation  - hospital.ui.HospitalGUI</li>
- *   <li>Layer 2: Business Logic - hospital.service.HospitalService (هذا الكلاس)</li>
- *   <li>Layer 3: Data Access   - hospital.db.DatabaseConnection</li>
- *   <li>Layer 4: Database      - SQLite</li>
+ *   <li>Presentation:  hospital.ui.HospitalGUI / hospital.ui.DashboardPanel</li>
+ *   <li>Application:   hospital.service.HospitalService (هذا الكلاس) — يحوي الـ use cases
+ *       والتحقق من صحة البيانات (Business Logic)، ولا يحتوي على أي SQL.</li>
+ *   <li>Domain:        hospital.model.* (Person, Doctor, Patient ...) — الكائنات ومنطقها،
+ *       تُبنى عبر {@link PersonFactory} (نمط Factory Method).</li>
+ *   <li>Persistence:   hospital.persistence.* (PatientDAO, DoctorDAO ...) — المكان الوحيد
+ *       الذي يحتوي على SQL، عبر hospital.db.DatabaseConnection.</li>
  * </ul>
  *
- * <p>الـ GUI يستدعي هذا الكلاس، وهذا الكلاس يستدعي قاعدة البيانات.</p>
+ * <p>هذا الكلاس (Application) هو حلقة الوصل: يستدعيه الـ GUI، وهو يستدعي الـ DAOs.</p>
  *
  * @author Student
- * @version 3.0
+ * @version 4.0
  */
 public class HospitalService {
 
-    // ── Patient Operations ────────────────────────────────────────────────────
+    private final PatientDAO patientDAO = new PatientDAO();
+    private final DoctorDAO doctorDAO = new DoctorDAO();
+    private final AppointmentDAO appointmentDAO = new AppointmentDAO();
+    private final MedicalRecordDAO recordDAO = new MedicalRecordDAO();
+    private final BillDAO billDAO = new BillDAO();
+    private final StatisticsDAO statisticsDAO = new StatisticsDAO();
+    private final ReportDAO reportDAO = new ReportDAO();
+
+    // ── Patient Use Cases ─────────────────────────────────────────────────────
 
     /**
-     * يضيف مريضاً جديداً بعد التحقق من صحة البيانات.
-     *
-     * @param name      اسم المريض
-     * @param age       العمر (نص)
-     * @param phone     رقم الهاتف
-     * @param email     البريد الإلكتروني
-     * @param blood     فصيلة الدم
-     * @param allergies الحساسيات
-     * @param status    الحالة (Outpatient/Inpatient)
-     * @throws HospitalException إذا كانت البيانات غير صالحة
-     * @throws SQLException      إذا فشلت عملية قاعدة البيانات
+     * حالة استخدام: إضافة مريض جديد.
+     * تتحقق من صحة البيانات، تبني كائن Patient عبر PersonFactory، ثم تفوض الحفظ لـ PatientDAO.
      */
     public void addPatient(String name, String age, String phone, String email,
                            String blood, String allergies, String status)
             throws HospitalException, SQLException {
-        // Business Logic: التحقق من البيانات
-        if (name.isEmpty()) throw new HospitalException("Patient name cannot be empty.");
-        if (age.isEmpty())  throw new HospitalException("Age cannot be empty.");
+
+        if (name == null || name.isEmpty()) throw new HospitalException("اسم المريض لا يمكن أن يكون فارغًا.");
+        if (age == null || age.isEmpty())   throw new HospitalException("العمر لا يمكن أن يكون فارغًا.");
         int ageInt;
         try { ageInt = Integer.parseInt(age); }
-        catch (NumberFormatException e) { throw new HospitalException("Age must be a number."); }
+        catch (NumberFormatException e) { throw new HospitalException("العمر يجب أن يكون رقمًا."); }
 
-        // Data Access: حفظ في قاعدة البيانات
-        String sql = "INSERT INTO patients(name,age,phone,email,blood_type,allergies,status,room_number)"
-                   + " VALUES(?,?,?,?,?,?,?,'N/A')";
-        PreparedStatement ps = DatabaseConnection.getConnection().prepareStatement(sql);
-        ps.setString(1, name); ps.setInt(2, ageInt);
-        ps.setString(3, phone); ps.setString(4, email);
-        ps.setString(5, blood); ps.setString(6, allergies);
-        ps.setString(7, status);
-        ps.executeUpdate(); ps.close();
+        // Domain object creation via Factory Method pattern
+        Patient patient = (Patient) PersonFactory.createPerson(
+                PersonFactory.TYPE_PATIENT, 0, name, ageInt, phone, email, blood, allergies, status);
+
+        patientDAO.insert(patient);
     }
 
-    /**
-     * يحذف مريضاً بالمعرف.
-     * @param id معرف المريض
-     * @throws SQLException إذا فشلت عملية قاعدة البيانات
-     */
+    /** حالة استخدام: حذف مريض. */
     public void deletePatient(int id) throws SQLException {
-        PreparedStatement ps = DatabaseConnection.getConnection()
-                .prepareStatement("DELETE FROM patients WHERE id=?");
-        ps.setInt(1, id); ps.executeUpdate(); ps.close();
+        patientDAO.delete(id);
     }
 
-    /**
-     * يجلب جميع المرضى من قاعدة البيانات.
-     * @return ResultSet يحتوي على بيانات المرضى
-     * @throws SQLException إذا فشلت عملية قاعدة البيانات
-     */
+    /** حالة استخدام: عرض كل المرضى. */
     public ResultSet getAllPatients() throws SQLException {
-        Statement st = DatabaseConnection.getConnection().createStatement();
-        return st.executeQuery("SELECT * FROM patients");
+        return patientDAO.findAll();
     }
 
-    // ── Doctor Operations ─────────────────────────────────────────────────────
+    // ── Doctor Use Cases ──────────────────────────────────────────────────────
 
     /**
-     * يضيف طبيباً جديداً بعد التحقق من صحة البيانات.
-     *
-     * @param name      اسم الطبيب
-     * @param age       العمر
-     * @param phone     رقم الهاتف
-     * @param email     البريد الإلكتروني
-     * @param specialty التخصص الطبي
-     * @param license   رقم الترخيص
-     * @throws HospitalException إذا كانت البيانات غير صالحة
-     * @throws SQLException      إذا فشلت عملية قاعدة البيانات
+     * حالة استخدام: إضافة طبيب جديد.
+     * تتحقق من صحة البيانات، تبني كائن Doctor عبر PersonFactory، ثم تفوض الحفظ لـ DoctorDAO.
      */
     public void addDoctor(String name, String age, String phone, String email,
                           String specialty, String license)
             throws HospitalException, SQLException {
-        // Business Logic: التحقق من البيانات
-        if (name.isEmpty())    throw new HospitalException("Doctor name cannot be empty.");
-        if (license.isEmpty()) throw new HospitalException("License number cannot be empty.");
+
+        if (name == null || name.isEmpty())       throw new HospitalException("اسم الطبيب لا يمكن أن يكون فارغًا.");
+        if (license == null || license.isEmpty()) throw new HospitalException("رقم الترخيص لا يمكن أن يكون فارغًا.");
         int ageInt;
         try { ageInt = Integer.parseInt(age); }
-        catch (NumberFormatException e) { throw new HospitalException("Age must be a number."); }
+        catch (NumberFormatException e) { throw new HospitalException("العمر يجب أن يكون رقمًا."); }
 
-        // Data Access: حفظ في قاعدة البيانات
-        String sql = "INSERT INTO doctors(name,age,phone,email,specialty,license_number,available)"
-                   + " VALUES(?,?,?,?,?,?,1)";
-        PreparedStatement ps = DatabaseConnection.getConnection().prepareStatement(sql);
-        ps.setString(1, name); ps.setInt(2, ageInt);
-        ps.setString(3, phone); ps.setString(4, email);
-        ps.setString(5, specialty); ps.setString(6, license);
-        ps.executeUpdate(); ps.close();
+        // Domain object creation via Factory Method pattern
+        Doctor doctor = (Doctor) PersonFactory.createPerson(
+                PersonFactory.TYPE_DOCTOR, 0, name, ageInt, phone, email, specialty, license, null);
+
+        doctorDAO.insert(doctor);
     }
 
-    /**
-     * يحذف طبيباً بالمعرف.
-     * @param id معرف الطبيب
-     * @throws SQLException إذا فشلت عملية قاعدة البيانات
-     */
+    /** حالة استخدام: حذف طبيب. */
     public void deleteDoctor(int id) throws SQLException {
-        PreparedStatement ps = DatabaseConnection.getConnection()
-                .prepareStatement("DELETE FROM doctors WHERE id=?");
-        ps.setInt(1, id); ps.executeUpdate(); ps.close();
+        doctorDAO.delete(id);
     }
 
-    /**
-     * يجلب جميع الأطباء من قاعدة البيانات.
-     * @return ResultSet يحتوي على بيانات الأطباء
-     * @throws SQLException إذا فشلت عملية قاعدة البيانات
-     */
+    /** حالة استخدام: عرض كل الأطباء. */
     public ResultSet getAllDoctors() throws SQLException {
-        Statement st = DatabaseConnection.getConnection().createStatement();
-        return st.executeQuery("SELECT * FROM doctors");
+        return doctorDAO.findAll();
     }
 
-    // ── Appointment Operations ────────────────────────────────────────────────
+    // ── Appointment Use Cases ─────────────────────────────────────────────────
 
-    /**
-     * يجدول موعداً جديداً بعد التحقق من صحة البيانات.
-     *
-     * @param patientIdStr معرف المريض (نص)
-     * @param doctorIdStr  معرف الطبيب (نص)
-     * @param date         التاريخ (YYYY-MM-DD)
-     * @param time         الوقت (HH:MM)
-     * @param notes        ملاحظات
-     * @throws HospitalException إذا كانت البيانات غير صالحة
-     * @throws SQLException      إذا فشلت عملية قاعدة البيانات
-     */
+    /** حالة استخدام: جدولة موعد جديد بعد التحقق من صحة المعرفات. */
     public void scheduleAppointment(String patientIdStr, String doctorIdStr,
                                     String date, String time, String notes)
             throws HospitalException, SQLException {
-        // Business Logic: التحقق من البيانات
-        if (patientIdStr.isEmpty()) throw new HospitalException("Patient ID is required.");
-        if (doctorIdStr.isEmpty())  throw new HospitalException("Doctor ID is required.");
+        if (patientIdStr == null || patientIdStr.isEmpty()) throw new HospitalException("معرف المريض مطلوب.");
+        if (doctorIdStr == null || doctorIdStr.isEmpty())   throw new HospitalException("معرف الطبيب مطلوب.");
         int pid, did;
         try { pid = Integer.parseInt(patientIdStr); did = Integer.parseInt(doctorIdStr); }
-        catch (NumberFormatException e) { throw new HospitalException("IDs must be numbers."); }
+        catch (NumberFormatException e) { throw new HospitalException("المعرفات يجب أن تكون أرقامًا."); }
 
-        // Data Access: حفظ في قاعدة البيانات
-        String sql = "INSERT INTO appointments(patient_id,doctor_id,date,time,status,notes)"
-                   + " VALUES(?,?,?,?,'Scheduled',?)";
-        PreparedStatement ps = DatabaseConnection.getConnection().prepareStatement(sql);
-        ps.setInt(1, pid); ps.setInt(2, did);
-        ps.setString(3, date); ps.setString(4, time); ps.setString(5, notes);
-        ps.executeUpdate(); ps.close();
+        appointmentDAO.insert(pid, did, date, time, notes);
     }
 
-    /**
-     * يحدث حالة موعد.
-     * @param id     معرف الموعد
-     * @param status الحالة الجديدة (Completed/Cancelled)
-     * @throws SQLException إذا فشلت عملية قاعدة البيانات
-     */
+    /** حالة استخدام: تحديث حالة موعد (Completed/Cancelled). */
     public void updateAppointmentStatus(int id, String status) throws SQLException {
-        PreparedStatement ps = DatabaseConnection.getConnection()
-                .prepareStatement("UPDATE appointments SET status=? WHERE appointment_id=?");
-        ps.setString(1, status); ps.setInt(2, id);
-        ps.executeUpdate(); ps.close();
+        appointmentDAO.updateStatus(id, status);
     }
 
-    // ── Medical Record Operations ─────────────────────────────────────────────
+    /** حالة استخدام: عرض كل المواعيد. */
+    public ResultSet getAllAppointmentsJoined() throws SQLException {
+        return appointmentDAO.findAllJoined();
+    }
 
-    /**
-     * يضيف سجلاً طبياً جديداً بعد التحقق من صحة البيانات.
-     *
-     * @param patientIdStr معرف المريض
-     * @param doctorIdStr  معرف الطبيب
-     * @param diagnosis    التشخيص
-     * @param treatment    العلاج
-     * @param medications  الأدوية
-     * @param notes        ملاحظات
-     * @throws HospitalException إذا كانت البيانات غير صالحة
-     * @throws SQLException      إذا فشلت عملية قاعدة البيانات
-     */
+    // ── Medical Record Use Cases ──────────────────────────────────────────────
+
+    /** حالة استخدام: إضافة سجل طبي بعد التحقق من صحة البيانات. */
     public void addRecord(String patientIdStr, String doctorIdStr, String diagnosis,
                           String treatment, String medications, String notes)
             throws HospitalException, SQLException {
-        // Business Logic: التحقق من البيانات
-        if (patientIdStr.isEmpty()) throw new HospitalException("Patient ID is required.");
-        if (diagnosis.isEmpty())    throw new HospitalException("Diagnosis cannot be empty.");
+        if (patientIdStr == null || patientIdStr.isEmpty()) throw new HospitalException("معرف المريض مطلوب.");
+        if (diagnosis == null || diagnosis.isEmpty())        throw new HospitalException("التشخيص لا يمكن أن يكون فارغًا.");
         int pid, did;
         try { pid = Integer.parseInt(patientIdStr); did = Integer.parseInt(doctorIdStr); }
-        catch (NumberFormatException e) { throw new HospitalException("IDs must be numbers."); }
+        catch (NumberFormatException e) { throw new HospitalException("المعرفات يجب أن تكون أرقامًا."); }
 
-        // Data Access: حفظ في قاعدة البيانات
-        String sql = "INSERT INTO medical_records(patient_id,doctor_id,date,diagnosis,treatment,medications,notes)"
-                   + " VALUES(?,?,date('now'),?,?,?,?)";
-        PreparedStatement ps = DatabaseConnection.getConnection().prepareStatement(sql);
-        ps.setInt(1, pid); ps.setInt(2, did);
-        ps.setString(3, diagnosis); ps.setString(4, treatment);
-        ps.setString(5, medications); ps.setString(6, notes);
-        ps.executeUpdate(); ps.close();
+        recordDAO.insert(pid, did, diagnosis, treatment, medications, notes);
     }
 
-    // ── Bill Operations ───────────────────────────────────────────────────────
+    /** حالة استخدام: عرض كل السجلات الطبية. */
+    public ResultSet getAllRecordsJoined() throws SQLException {
+        return recordDAO.findAllJoined();
+    }
 
-    /**
-     * يولد فاتورة جديدة للمريض بعد التحقق من صحة البيانات.
-     *
-     * @param patientIdStr معرف المريض
-     * @param consultation رسوم الكشف
-     * @param medication   رسوم الأدوية
-     * @param lab          رسوم التحاليل
-     * @param room         رسوم الغرفة
-     * @throws HospitalException إذا كانت البيانات غير صالحة
-     * @throws SQLException      إذا فشلت عملية قاعدة البيانات
-     */
+    // ── Bill Use Cases ────────────────────────────────────────────────────────
+
+    /** حالة استخدام: توليد فاتورة بعد التحقق من صحة البيانات وحساب الإجمالي. */
     public void generateBill(String patientIdStr, String consultation,
                              String medication, String lab, String room)
             throws HospitalException, SQLException {
-        // Business Logic: التحقق من البيانات
-        if (patientIdStr.isEmpty()) throw new HospitalException("Patient ID is required.");
+        if (patientIdStr == null || patientIdStr.isEmpty()) throw new HospitalException("معرف المريض مطلوب.");
         int pid;
         try { pid = Integer.parseInt(patientIdStr); }
-        catch (NumberFormatException e) { throw new HospitalException("Patient ID must be a number."); }
+        catch (NumberFormatException e) { throw new HospitalException("معرف المريض يجب أن يكون رقمًا."); }
         double c, m, l, r;
         try {
             c = Double.parseDouble(consultation); m = Double.parseDouble(medication);
             l = Double.parseDouble(lab);          r = Double.parseDouble(room);
-        } catch (NumberFormatException e) { throw new HospitalException("Fees must be numbers."); }
+        } catch (NumberFormatException e) { throw new HospitalException("الرسوم يجب أن تكون أرقامًا."); }
 
-        // Business Logic: حساب الإجمالي والتحقق منه
         double total = c + m + l + r;
-        if (total < 0) throw new HospitalException("Total bill cannot be negative.");
+        if (total < 0) throw new HospitalException("إجمالي الفاتورة لا يمكن أن يكون سالبًا.");
 
-        // Data Access: حفظ في قاعدة البيانات
-        String sql = "INSERT INTO bills(patient_id,bill_date,consultation_fee,medication_fee,lab_fee,room_fee,payment_status)"
-                   + " VALUES(?,date('now'),?,?,?,?,'Unpaid')";
-        PreparedStatement ps = DatabaseConnection.getConnection().prepareStatement(sql);
-        ps.setInt(1, pid); ps.setDouble(2, c); ps.setDouble(3, m);
-        ps.setDouble(4, l); ps.setDouble(5, r);
-        ps.executeUpdate(); ps.close();
+        billDAO.insert(pid, c, m, l, r);
     }
 
-    /**
-     * يعلم فاتورة كمدفوعة.
-     * @param id معرف الفاتورة
-     * @throws SQLException إذا فشلت عملية قاعدة البيانات
-     */
+    /** حالة استخدام: تعليم فاتورة كمدفوعة. */
     public void markBillPaid(int id) throws SQLException {
-        PreparedStatement ps = DatabaseConnection.getConnection()
-                .prepareStatement("UPDATE bills SET payment_status='Paid' WHERE bill_id=?");
-        ps.setInt(1, id); ps.executeUpdate(); ps.close();
+        billDAO.markPaid(id);
     }
 
-    // ── Statistics Operations ─────────────────────────────────────────────────
+    /** حالة استخدام: عرض كل الفواتير. */
+    public ResultSet getAllBillsJoined() throws SQLException {
+        return billDAO.findAllJoined();
+    }
 
-    /**
-     * يحسب عدد السجلات في جدول معين.
-     * @param tableName اسم الجدول
-     * @return عدد السجلات
-     */
+    // ── Dashboard / Statistics Use Cases ────────────────────────────────────────
+
+    /** حالة استخدام: عدد السجلات في جدول معين (لبطاقات لوحة التحكم). */
     public int getCount(String tableName) {
-        try {
-            Statement st = DatabaseConnection.getConnection().createStatement();
-            ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM " + tableName);
-            int count = rs.getInt(1);
-            rs.close(); st.close();
-            return count;
-        } catch (SQLException e) { return 0; }
+        return statisticsDAO.getCount(tableName);
     }
 
-    /**
-     * يحسب إجمالي الإيرادات من الفواتير المدفوعة.
-     * @return إجمالي الإيرادات
-     */
+    /** حالة استخدام: إجمالي الإيرادات (لبطاقات لوحة التحكم). */
     public double getTotalRevenue() {
-        try {
-            Statement st = DatabaseConnection.getConnection().createStatement();
-            ResultSet rs = st.executeQuery(
-                "SELECT SUM(consultation_fee+medication_fee+lab_fee+room_fee) FROM bills WHERE payment_status='Paid'");
-            double total = rs.getDouble(1);
-            rs.close(); st.close();
-            return total;
-        } catch (SQLException e) { return 0; }
+        return statisticsDAO.getTotalRevenue();
+    }
+
+    /** حالة استخدام: عدد المواعيد لكل حالة (للرسم البياني في لوحة التحكم). */
+    public Map<String, Integer> getAppointmentStatusCounts() {
+        return statisticsDAO.getAppointmentStatusCounts();
+    }
+
+    // ── Reports Use Cases ─────────────────────────────────────────────────────
+
+    /** تقرير 1: عدد المرضى حسب الحالة (مريض داخلي / مريض خارجي). */
+    public Map<String, Integer> getPatientsByStatusReport() {
+        return reportDAO.getPatientsByStatus();
+    }
+
+    /** تقرير 2: عدد الأطباء حسب التخصص. */
+    public Map<String, Integer> getDoctorsBySpecialtyReport() {
+        return reportDAO.getDoctorsBySpecialty();
+    }
+
+    /** تقرير 3: ملخص مالي (إجمالي ومعدود الفواتير المدفوعة/غير المدفوعة). */
+    public double[] getFinancialSummaryReport() {
+        return reportDAO.getFinancialSummary();
     }
 }
