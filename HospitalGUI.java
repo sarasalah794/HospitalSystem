@@ -2,7 +2,6 @@ package hospital.ui;
 
 import hospital.db.DatabaseConnection;
 import hospital.exception.HospitalException;
-import hospital.factory.PersonFactory;
 import hospital.model.*;
 
 import javax.swing.*;
@@ -53,6 +52,7 @@ public class HospitalGUI extends JFrame {
 
     private void buildUI() {
         JTabbedPane tabs = new JTabbedPane();
+        tabs.addTab("Dashboard",      new DashboardPanel());
         tabs.addTab("Patients",       buildPatientPanel());
         tabs.addTab("Doctors",        buildDoctorPanel());
         tabs.addTab("Appointments",   buildAppointmentPanel());
@@ -469,19 +469,13 @@ public class HospitalGUI extends JFrame {
         try { ageInt = Integer.parseInt(age); }
         catch (NumberFormatException e) { throw new HospitalException("Age must be a number."); }
 
-        // Factory Method pattern: object creation/validation is delegated to
-        // PersonFactory instead of building the row from raw strings here.
-        Patient patient = (Patient) PersonFactory.createPerson(
-                PersonFactory.TYPE_PATIENT, 0, name, ageInt, phone, email,
-                blood, allergies, status);
-
         String sql = "INSERT INTO patients(name,age,phone,email,blood_type,allergies,status,room_number)"
-                   + " VALUES(?,?,?,?,?,?,?,?)";
+                   + " VALUES(?,?,?,?,?,?,?,'N/A')";
         PreparedStatement ps = DatabaseConnection.getConnection().prepareStatement(sql);
-        ps.setString(1, patient.getName()); ps.setInt(2, patient.getAge());
-        ps.setString(3, patient.getPhone()); ps.setString(4, patient.getEmail());
-        ps.setString(5, patient.getBloodType()); ps.setString(6, patient.getAllergies());
-        ps.setString(7, patient.getStatus()); ps.setString(8, patient.getRoomNumber());
+        ps.setString(1, name); ps.setInt(2, ageInt);
+        ps.setString(3, phone); ps.setString(4, email);
+        ps.setString(5, blood); ps.setString(6, allergies);
+        ps.setString(7, status);
         ps.executeUpdate(); ps.close();
         loadPatients();
         JOptionPane.showMessageDialog(this, "Patient added successfully!", "Success", JOptionPane.INFORMATION_MESSAGE);
@@ -519,18 +513,12 @@ public class HospitalGUI extends JFrame {
         try { ageInt = Integer.parseInt(age); }
         catch (NumberFormatException e) { throw new HospitalException("Age must be a number."); }
 
-        // Factory Method pattern: object creation/validation is delegated to
-        // PersonFactory instead of building the row from raw strings here.
-        Doctor doctor = (Doctor) PersonFactory.createPerson(
-                PersonFactory.TYPE_DOCTOR, 0, name, ageInt, phone, email,
-                specialty, license, null);
-
         String sql = "INSERT INTO doctors(name,age,phone,email,specialty,license_number,available)"
                    + " VALUES(?,?,?,?,?,?,1)";
         PreparedStatement ps = DatabaseConnection.getConnection().prepareStatement(sql);
-        ps.setString(1, doctor.getName()); ps.setInt(2, doctor.getAge());
-        ps.setString(3, doctor.getPhone()); ps.setString(4, doctor.getEmail());
-        ps.setString(5, doctor.getSpecialty()); ps.setString(6, doctor.getLicenseNumber());
+        ps.setString(1, name); ps.setInt(2, ageInt);
+        ps.setString(3, phone); ps.setString(4, email);
+        ps.setString(5, specialty); ps.setString(6, license);
         ps.executeUpdate(); ps.close();
         loadDoctors();
         JOptionPane.showMessageDialog(this, "Doctor added successfully!", "Success", JOptionPane.INFORMATION_MESSAGE);
