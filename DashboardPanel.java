@@ -19,6 +19,17 @@ public class DashboardPanel extends JPanel {
 
     private final HospitalService hospitalService = new HospitalService();
 
+    /** يترجم اسم حالة الموعد المخزّن بالإنجليزي إلى عربي للعرض فقط. */
+    private static String ar(String status) {
+        if (status == null) return "";
+        switch (status) {
+            case "Scheduled": return "مجدول";
+            case "Completed": return "مكتمل";
+            case "Cancelled": return "ملغى";
+            default: return status;
+        }
+    }
+
     private JLabel patientsValue;
     private JLabel doctorsValue;
     private JLabel revenueValue;
@@ -91,7 +102,11 @@ public class DashboardPanel extends JPanel {
         revenueValue.setText(String.format("$%.2f", hospitalService.getTotalRevenue()));
 
         Map<String, Integer> statusCounts = hospitalService.getAppointmentStatusCounts();
-        chartPanel.setData(statusCounts);
+        Map<String, Integer> arabicCounts = new LinkedHashMap<>();
+        for (Map.Entry<String, Integer> entry : statusCounts.entrySet()) {
+            arabicCounts.put(ar(entry.getKey()), entry.getValue());
+        }
+        chartPanel.setData(arabicCounts);
     }
 
     // ── Pie Chart ─────────────────────────────────────────────────────────────
