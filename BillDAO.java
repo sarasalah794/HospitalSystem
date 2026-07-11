@@ -37,6 +37,40 @@ public class BillDAO {
     }
 
     /**
+     * يجلب فاتورة واحدة بالمعرف (لاستخدامه بنموذج التعديل).
+     * @param id معرف الفاتورة
+     * @return ResultSet يحتوي على صف الفاتورة (لو موجود)
+     * @throws SQLException إذا فشلت عملية قاعدة البيانات
+     */
+    public ResultSet findById(int id) throws SQLException {
+        PreparedStatement ps = DatabaseConnection.getConnection()
+                .prepareStatement("SELECT * FROM bills WHERE bill_id=?");
+        ps.setInt(1, id);
+        return ps.executeQuery();
+    }
+
+    /**
+     * يحدّث رسوم فاتورة موجودة.
+     * @param id معرف الفاتورة
+     * @param consultation رسوم الكشف الجديدة
+     * @param medication رسوم الأدوية الجديدة
+     * @param lab رسوم التحاليل الجديدة
+     * @param room رسوم الغرفة الجديدة
+     * @throws SQLException إذا فشلت عملية قاعدة البيانات
+     */
+    public void update(int id, double consultation, double medication,
+                        double lab, double room) throws SQLException {
+        String sql = "UPDATE bills SET consultation_fee=?, medication_fee=?, lab_fee=?, room_fee=? "
+                   + "WHERE bill_id=?";
+        try (PreparedStatement ps = DatabaseConnection.getConnection().prepareStatement(sql)) {
+            ps.setDouble(1, consultation); ps.setDouble(2, medication);
+            ps.setDouble(3, lab); ps.setDouble(4, room);
+            ps.setInt(5, id);
+            ps.executeUpdate();
+        }
+    }
+
+    /**
      * يعلم فاتورة كمدفوعة.
      * @param id معرف الفاتورة
      * @throws SQLException إذا فشلت عملية قاعدة البيانات
