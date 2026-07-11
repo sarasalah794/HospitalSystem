@@ -78,6 +78,27 @@ public class HospitalService {
         return patientDAO.findAll();
     }
 
+    /** حالة استخدام: جلب مريض واحد بالمعرف (لتعبئة نموذج التعديل). */
+    public ResultSet getPatientById(int id) throws SQLException {
+        return patientDAO.findById(id);
+    }
+
+    /** حالة استخدام: تعديل بيانات مريض موجود بعد التحقق من صحة البيانات. */
+    public void updatePatient(int id, String name, String age, String phone, String email,
+                              String blood, String allergies, String status)
+            throws HospitalException, SQLException {
+        if (name == null || name.isEmpty()) throw new HospitalException("اسم المريض لا يمكن أن يكون فارغًا.");
+        if (age == null || age.isEmpty())   throw new HospitalException("العمر لا يمكن أن يكون فارغًا.");
+        int ageInt;
+        try { ageInt = Integer.parseInt(age); }
+        catch (NumberFormatException e) { throw new HospitalException("العمر يجب أن يكون رقمًا."); }
+
+        Patient patient = (Patient) PersonFactory.createPerson(
+                PersonFactory.TYPE_PATIENT, id, name, ageInt, phone, email, blood, allergies, status);
+
+        patientDAO.update(id, patient);
+    }
+
     // ── Doctor Use Cases ──────────────────────────────────────────────────────
 
     /**
@@ -111,6 +132,27 @@ public class HospitalService {
         return doctorDAO.findAll();
     }
 
+    /** حالة استخدام: جلب طبيب واحد بالمعرف (لتعبئة نموذج التعديل). */
+    public ResultSet getDoctorById(int id) throws SQLException {
+        return doctorDAO.findById(id);
+    }
+
+    /** حالة استخدام: تعديل بيانات طبيب موجود بعد التحقق من صحة البيانات. */
+    public void updateDoctor(int id, String name, String age, String phone, String email,
+                             String specialty, String license)
+            throws HospitalException, SQLException {
+        if (name == null || name.isEmpty())       throw new HospitalException("اسم الطبيب لا يمكن أن يكون فارغًا.");
+        if (license == null || license.isEmpty()) throw new HospitalException("رقم الترخيص لا يمكن أن يكون فارغًا.");
+        int ageInt;
+        try { ageInt = Integer.parseInt(age); }
+        catch (NumberFormatException e) { throw new HospitalException("العمر يجب أن يكون رقمًا."); }
+
+        Doctor doctor = (Doctor) PersonFactory.createPerson(
+                PersonFactory.TYPE_DOCTOR, id, name, ageInt, phone, email, specialty, license, null);
+
+        doctorDAO.update(id, doctor);
+    }
+
     // ── Appointment Use Cases ─────────────────────────────────────────────────
 
     /** حالة استخدام: جدولة موعد جديد بعد التحقق من صحة المعرفات. */
@@ -136,6 +178,16 @@ public class HospitalService {
         return appointmentDAO.findAllJoined();
     }
 
+    /** حالة استخدام: جلب موعد واحد بالمعرف (لتعبئة نموذج التعديل). */
+    public ResultSet getAppointmentById(int id) throws SQLException {
+        return appointmentDAO.findById(id);
+    }
+
+    /** حالة استخدام: تعديل تاريخ/وقت/ملاحظات موعد موجود. */
+    public void updateAppointment(int id, String date, String time, String notes) throws SQLException {
+        appointmentDAO.update(id, date, time, notes);
+    }
+
     // ── Medical Record Use Cases ──────────────────────────────────────────────
 
     /** حالة استخدام: إضافة سجل طبي بعد التحقق من صحة البيانات. */
@@ -154,6 +206,20 @@ public class HospitalService {
     /** حالة استخدام: عرض كل السجلات الطبية. */
     public ResultSet getAllRecordsJoined() throws SQLException {
         return recordDAO.findAllJoined();
+    }
+
+    /** حالة استخدام: جلب سجل طبي واحد بالمعرف (لتعبئة نموذج التعديل). */
+    public ResultSet getRecordById(int id) throws SQLException {
+        return recordDAO.findById(id);
+    }
+
+    /** حالة استخدام: تعديل سجل طبي موجود بعد التحقق من صحة البيانات. */
+    public void updateRecord(int id, String diagnosis, String treatment,
+                             String medications, String notes)
+            throws HospitalException, SQLException {
+        if (diagnosis == null || diagnosis.isEmpty())
+            throw new HospitalException("التشخيص لا يمكن أن يكون فارغًا.");
+        recordDAO.update(id, diagnosis, treatment, medications, notes);
     }
 
     // ── Bill Use Cases ────────────────────────────────────────────────────────
@@ -186,6 +252,24 @@ public class HospitalService {
     /** حالة استخدام: عرض كل الفواتير. */
     public ResultSet getAllBillsJoined() throws SQLException {
         return billDAO.findAllJoined();
+    }
+
+    /** حالة استخدام: جلب فاتورة واحدة بالمعرف (لتعبئة نموذج التعديل). */
+    public ResultSet getBillById(int id) throws SQLException {
+        return billDAO.findById(id);
+    }
+
+    /** حالة استخدام: تعديل رسوم فاتورة موجودة بعد التحقق من صحة البيانات. */
+    public void updateBill(int id, String consultation, String medication, String lab, String room)
+            throws HospitalException, SQLException {
+        double c, m, l, r;
+        try {
+            c = Double.parseDouble(consultation); m = Double.parseDouble(medication);
+            l = Double.parseDouble(lab);          r = Double.parseDouble(room);
+        } catch (NumberFormatException e) { throw new HospitalException("الرسوم يجب أن تكون أرقامًا."); }
+        if (c + m + l + r < 0) throw new HospitalException("إجمالي الفاتورة لا يمكن أن يكون سالبًا.");
+
+        billDAO.update(id, c, m, l, r);
     }
 
     // ── Dashboard / Statistics Use Cases ────────────────────────────────────────
