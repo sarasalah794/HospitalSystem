@@ -2,21 +2,28 @@ package hospital.ui;
 
 import hospital.db.DatabaseConnection;
 import hospital.exception.HospitalException;
-import hospital.model.*;
+import hospital.service.HospitalService;
 
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
 import java.awt.*;
-import java.sql.*;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.time.LocalDate;
 
 /**
- * Main GUI for the Hospital Management System.
+ * الواجهة الرئيسية لنظام إدارة المستشفى (طبقة العرض - Presentation Layer).
+ *
+ * <p>هذه الواجهة لا تحتوي على أي SQL مباشر: كل العمليات (إضافة/حذف/عرض)
+ * تمر عبر {@link HospitalService} (طبقة Application)، والتي بدورها تستخدم
+ * DAOs (طبقة Persistence) وتبني الكائنات عبر {@code PersonFactory} (Domain).</p>
  *
  * @author Student
- * @version 1.0
+ * @version 2.0
  */
 public class HospitalGUI extends JFrame {
+
+    private final HospitalService hospitalService = new HospitalService();
 
     private DefaultTableModel patientTableModel;
     private DefaultTableModel doctorTableModel;
@@ -31,19 +38,20 @@ public class HospitalGUI extends JFrame {
     private JTable billTable;
 
     /**
-     * Constructs the main hospital GUI window.
+     * ينشئ النافذة الرئيسية لنظام إدارة المستشفى.
      */
     public HospitalGUI() {
-        setTitle("Hospital Management System");
-        setSize(1000, 650);
+        setTitle("نظام إدارة المستشفى");
+        setSize(1050, 680);
         setDefaultCloseOperation(EXIT_ON_CLOSE);
         setLocationRelativeTo(null);
+        applyComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
 
         try {
             DatabaseConnection.initializeDatabase();
         } catch (SQLException e) {
-            JOptionPane.showMessageDialog(this, "DB Error: " + e.getMessage(),
-                    "Database Error", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(this, "خطأ في قاعدة البيانات: " + e.getMessage(),
+                    "خطأ بقاعدة البيانات", JOptionPane.ERROR_MESSAGE);
         }
 
         buildUI();
@@ -52,80 +60,91 @@ public class HospitalGUI extends JFrame {
 
     private void buildUI() {
         JTabbedPane tabs = new JTabbedPane();
-        tabs.addTab("Dashboard",      new DashboardPanel());
-        tabs.addTab("Patients",       buildPatientPanel());
-        tabs.addTab("Doctors",        buildDoctorPanel());
-        tabs.addTab("Appointments",   buildAppointmentPanel());
-        tabs.addTab("Medical Records",buildRecordPanel());
-        tabs.addTab("Billing",        buildBillPanel());
+        tabs.applyComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
+        tabs.addTab("لوحة التحكم",   new DashboardPanel());
+        tabs.addTab("المرضى",       buildPatientPanel());
+        tabs.addTab("الأطباء",      buildDoctorPanel());
+        tabs.addTab("المواعيد",     buildAppointmentPanel());
+        tabs.addTab("السجلات الطبية", buildRecordPanel());
+        tabs.addTab("الفواتير",     buildBillPanel());
         add(tabs);
     }
 
-    // ── PATIENT PANEL ─────────────────────────────────────────────────────────
+    // ── ترجمة القيم الداخلية للعرض بالعربي (القيم بقاعدة البيانات تبقى إنجليزي) ──
+    private static String ar(String status) {
+        if (status == null) return "";
+        switch (status) {
+            case "Outpatient": return "مريض خارجي";
+            case "Inpatient":  return "مريض داخلي";
+            case "Scheduled":  return "مجدول";
+            case "Completed":  return "مكتمل";
+            case "Cancelled":  return "ملغى";
+            case "Unpaid":     return "غير مدفوعة";
+            case "Paid":       return "مدفوعة";
+            default: return status;
+        }
+    }
+
+    // ── لوحة المرضى ───────────────────────────────────────────────────────────
     private JPanel buildPatientPanel() {
         JPanel panel = new JPanel(new BorderLayout(5, 5));
         panel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
 
-        // Fields
-        JTextField fName     = new JTextField(15);
-        JTextField fAge      = new JTextField(5);
-        JTextField fPhone    = new JTextField(15);
-        JTextField fEmail    = new JTextField(15);
-        JTextField fBlood    = new JTextField(5);
-        JTextField fAllergy  = new JTextField(15);
-        JComboBox<String> fStatus = new JComboBox<>(new String[]{"Outpatient","Inpatient"});
+        JTextField fName    = new JTextField(15);
+        JTextField fAge     = new JTextField(5);
+        JTextField fPhone   = new JTextField(15);
+        JTextField fEmail   = new JTextField(15);
+        JTextField fBlood   = new JTextField(5);
+        JTextField fAllergy = new JTextField(15);
+        // العرض بالعربي، والقيمة الفعلية المخزنة تبقى بالإنجليزي (Outpatient/Inpatient)
+        JComboBox<String> fStatus = new JComboBox<>(new String[]{"مريض خارجي", "مريض داخلي"});
 
-        // Form using GridBagLayout for clean label-field pairs
         JPanel form = new JPanel(new GridBagLayout());
-        form.setBorder(BorderFactory.createTitledBorder("Add New Patient"));
+        form.setBorder(BorderFactory.createTitledBorder("إضافة مريض جديد"));
         GridBagConstraints g = new GridBagConstraints();
         g.insets = new Insets(4, 4, 4, 4);
-        g.anchor = GridBagConstraints.WEST;
+        g.anchor = GridBagConstraints.EAST;
 
-        // Row 1: Name | Age
-        g.gridx=0; g.gridy=0; form.add(new JLabel("Name:"), g);
+        g.gridx=0; g.gridy=0; form.add(new JLabel("الاسم:"), g);
         g.gridx=1; form.add(fName, g);
-        g.gridx=2; form.add(new JLabel("Age:"), g);
+        g.gridx=2; form.add(new JLabel("العمر:"), g);
         g.gridx=3; form.add(fAge, g);
 
-        // Row 2: Phone | Blood Type
-        g.gridx=0; g.gridy=1; form.add(new JLabel("Phone:"), g);
+        g.gridx=0; g.gridy=1; form.add(new JLabel("الهاتف:"), g);
         g.gridx=1; form.add(fPhone, g);
-        g.gridx=2; form.add(new JLabel("Blood Type:"), g);
+        g.gridx=2; form.add(new JLabel("فصيلة الدم:"), g);
         g.gridx=3; form.add(fBlood, g);
 
-        // Row 3: Email | Allergies
-        g.gridx=0; g.gridy=2; form.add(new JLabel("Email:"), g);
+        g.gridx=0; g.gridy=2; form.add(new JLabel("البريد الإلكتروني:"), g);
         g.gridx=1; form.add(fEmail, g);
-        g.gridx=2; form.add(new JLabel("Allergies:"), g);
+        g.gridx=2; form.add(new JLabel("الحساسية:"), g);
         g.gridx=3; form.add(fAllergy, g);
 
-        // Row 4: Status
-        g.gridx=0; g.gridy=3; form.add(new JLabel("Status:"), g);
+        g.gridx=0; g.gridy=3; form.add(new JLabel("الحالة:"), g);
         g.gridx=1; form.add(fStatus, g);
 
-        // Table
         patientTableModel = new DefaultTableModel(
-                new String[]{"ID","Name","Age","Phone","Blood","Status","Room"}, 0);
+                new String[]{"المعرف","الاسم","العمر","الهاتف","فصيلة الدم","الحالة","رقم الغرفة"}, 0);
         patientTable = new JTable(patientTableModel);
+        patientTable.applyComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
         loadPatients();
 
-        // Buttons
-        JButton btnAdd    = new JButton("Add Patient");
-        JButton btnDelete = new JButton("Delete");
-        JButton btnRefresh= new JButton("Refresh");
+        JButton btnAdd     = new JButton("إضافة مريض");
+        JButton btnDelete  = new JButton("حذف");
+        JButton btnRefresh = new JButton("تحديث");
 
         btnAdd.addActionListener(e -> {
             try {
-                addPatient(fName.getText().trim(), fAge.getText().trim(),
+                String status = "مريض داخلي".equals(fStatus.getSelectedItem()) ? "Inpatient" : "Outpatient";
+                hospitalService.addPatient(fName.getText().trim(), fAge.getText().trim(),
                         fPhone.getText().trim(), fEmail.getText().trim(),
-                        fBlood.getText().trim(), fAllergy.getText().trim(),
-                        (String) fStatus.getSelectedItem());
+                        fBlood.getText().trim(), fAllergy.getText().trim(), status);
                 fName.setText(""); fAge.setText(""); fPhone.setText("");
                 fEmail.setText(""); fBlood.setText(""); fAllergy.setText("");
+                loadPatients();
+                JOptionPane.showMessageDialog(this, "تمت إضافة المريض بنجاح!", "نجاح", JOptionPane.INFORMATION_MESSAGE);
             } catch (HospitalException | SQLException ex) {
-                JOptionPane.showMessageDialog(this, ex.getMessage(), "Error",
-                        JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(this, ex.getMessage(), "خطأ", JOptionPane.ERROR_MESSAGE);
             }
         });
 
@@ -133,7 +152,7 @@ public class HospitalGUI extends JFrame {
             int row = patientTable.getSelectedRow();
             if (row >= 0) {
                 int id = (int) patientTableModel.getValueAt(row, 0);
-                try { deletePatient(id); }
+                try { hospitalService.deletePatient(id); loadPatients(); }
                 catch (SQLException ex) { JOptionPane.showMessageDialog(this, ex.getMessage()); }
             }
         });
@@ -149,7 +168,7 @@ public class HospitalGUI extends JFrame {
         return panel;
     }
 
-    // ── DOCTOR PANEL ──────────────────────────────────────────────────────────
+    // ── لوحة الأطباء ──────────────────────────────────────────────────────────
     private JPanel buildDoctorPanel() {
         JPanel panel = new JPanel(new BorderLayout(5, 5));
         panel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
@@ -162,45 +181,47 @@ public class HospitalGUI extends JFrame {
         JTextField fLicense = new JTextField(10);
 
         JPanel form = new JPanel(new GridBagLayout());
-        form.setBorder(BorderFactory.createTitledBorder("Add New Doctor"));
+        form.setBorder(BorderFactory.createTitledBorder("إضافة طبيب جديد"));
         GridBagConstraints g = new GridBagConstraints();
         g.insets = new Insets(4, 4, 4, 4);
-        g.anchor = GridBagConstraints.WEST;
+        g.anchor = GridBagConstraints.EAST;
 
-        g.gridx=0; g.gridy=0; form.add(new JLabel("Name:"), g);
+        g.gridx=0; g.gridy=0; form.add(new JLabel("الاسم:"), g);
         g.gridx=1; form.add(fName, g);
-        g.gridx=2; form.add(new JLabel("Age:"), g);
+        g.gridx=2; form.add(new JLabel("العمر:"), g);
         g.gridx=3; form.add(fAge, g);
 
-        g.gridx=0; g.gridy=1; form.add(new JLabel("Phone:"), g);
+        g.gridx=0; g.gridy=1; form.add(new JLabel("الهاتف:"), g);
         g.gridx=1; form.add(fPhone, g);
-        g.gridx=2; form.add(new JLabel("Email:"), g);
+        g.gridx=2; form.add(new JLabel("البريد الإلكتروني:"), g);
         g.gridx=3; form.add(fEmail, g);
 
-        g.gridx=0; g.gridy=2; form.add(new JLabel("Specialty:"), g);
+        g.gridx=0; g.gridy=2; form.add(new JLabel("التخصص:"), g);
         g.gridx=1; form.add(fSpec, g);
-        g.gridx=2; form.add(new JLabel("License#:"), g);
+        g.gridx=2; form.add(new JLabel("رقم الترخيص:"), g);
         g.gridx=3; form.add(fLicense, g);
 
         doctorTableModel = new DefaultTableModel(
-                new String[]{"ID","Name","Age","Specialty","License","Available"}, 0);
+                new String[]{"المعرف","الاسم","العمر","التخصص","رقم الترخيص","متاح"}, 0);
         doctorTable = new JTable(doctorTableModel);
+        doctorTable.applyComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
         loadDoctors();
 
-        JButton btnAdd    = new JButton("Add Doctor");
-        JButton btnDelete = new JButton("Delete");
-        JButton btnRefresh= new JButton("Refresh");
+        JButton btnAdd     = new JButton("إضافة طبيب");
+        JButton btnDelete  = new JButton("حذف");
+        JButton btnRefresh = new JButton("تحديث");
 
         btnAdd.addActionListener(e -> {
             try {
-                addDoctor(fName.getText().trim(), fAge.getText().trim(),
+                hospitalService.addDoctor(fName.getText().trim(), fAge.getText().trim(),
                         fPhone.getText().trim(), fEmail.getText().trim(),
                         fSpec.getText().trim(), fLicense.getText().trim());
                 fName.setText(""); fAge.setText(""); fPhone.setText("");
                 fEmail.setText(""); fSpec.setText(""); fLicense.setText("");
+                loadDoctors();
+                JOptionPane.showMessageDialog(this, "تمت إضافة الطبيب بنجاح!", "نجاح", JOptionPane.INFORMATION_MESSAGE);
             } catch (HospitalException | SQLException ex) {
-                JOptionPane.showMessageDialog(this, ex.getMessage(), "Error",
-                        JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(this, ex.getMessage(), "خطأ", JOptionPane.ERROR_MESSAGE);
             }
         });
 
@@ -208,7 +229,7 @@ public class HospitalGUI extends JFrame {
             int row = doctorTable.getSelectedRow();
             if (row >= 0) {
                 int id = (int) doctorTableModel.getValueAt(row, 0);
-                try { deleteDoctor(id); }
+                try { hospitalService.deleteDoctor(id); loadDoctors(); }
                 catch (SQLException ex) { JOptionPane.showMessageDialog(this, ex.getMessage()); }
             }
         });
@@ -224,7 +245,7 @@ public class HospitalGUI extends JFrame {
         return panel;
     }
 
-    // ── APPOINTMENT PANEL ─────────────────────────────────────────────────────
+    // ── لوحة المواعيد ─────────────────────────────────────────────────────────
     private JPanel buildAppointmentPanel() {
         JPanel panel = new JPanel(new BorderLayout(5, 5));
         panel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
@@ -236,41 +257,43 @@ public class HospitalGUI extends JFrame {
         JTextField fNotes     = new JTextField(20);
 
         JPanel form = new JPanel(new GridBagLayout());
-        form.setBorder(BorderFactory.createTitledBorder("Schedule Appointment"));
+        form.setBorder(BorderFactory.createTitledBorder("جدولة موعد"));
         GridBagConstraints g = new GridBagConstraints();
         g.insets = new Insets(4, 4, 4, 4);
-        g.anchor = GridBagConstraints.WEST;
+        g.anchor = GridBagConstraints.EAST;
 
-        g.gridx=0; g.gridy=0; form.add(new JLabel("Patient ID:"), g);
+        g.gridx=0; g.gridy=0; form.add(new JLabel("معرف المريض:"), g);
         g.gridx=1; form.add(fPatientId, g);
-        g.gridx=2; form.add(new JLabel("Doctor ID:"), g);
+        g.gridx=2; form.add(new JLabel("معرف الطبيب:"), g);
         g.gridx=3; form.add(fDoctorId, g);
 
-        g.gridx=0; g.gridy=1; form.add(new JLabel("Date (YYYY-MM-DD):"), g);
+        g.gridx=0; g.gridy=1; form.add(new JLabel("التاريخ (YYYY-MM-DD):"), g);
         g.gridx=1; form.add(fDate, g);
-        g.gridx=2; form.add(new JLabel("Time (HH:MM):"), g);
+        g.gridx=2; form.add(new JLabel("الوقت (HH:MM):"), g);
         g.gridx=3; form.add(fTime, g);
 
-        g.gridx=0; g.gridy=2; form.add(new JLabel("Notes:"), g);
+        g.gridx=0; g.gridy=2; form.add(new JLabel("ملاحظات:"), g);
         g.gridx=1; g.gridwidth=3; form.add(fNotes, g); g.gridwidth=1;
 
         appointmentTableModel = new DefaultTableModel(
-                new String[]{"ID","Patient","Doctor","Date","Time","Status","Notes"}, 0);
+                new String[]{"المعرف","المريض","الطبيب","التاريخ","الوقت","الحالة","ملاحظات"}, 0);
         appointmentTable = new JTable(appointmentTableModel);
+        appointmentTable.applyComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
         loadAppointments();
 
-        JButton btnAdd      = new JButton("Schedule");
-        JButton btnCancel   = new JButton("Cancel");
-        JButton btnComplete = new JButton("Complete");
-        JButton btnRefresh  = new JButton("Refresh");
+        JButton btnAdd      = new JButton("جدولة");
+        JButton btnCancel   = new JButton("إلغاء");
+        JButton btnComplete = new JButton("إتمام");
+        JButton btnRefresh  = new JButton("تحديث");
 
         btnAdd.addActionListener(e -> {
             try {
-                scheduleAppointment(fPatientId.getText().trim(), fDoctorId.getText().trim(),
+                hospitalService.scheduleAppointment(fPatientId.getText().trim(), fDoctorId.getText().trim(),
                         fDate.getText().trim(), fTime.getText().trim(), fNotes.getText().trim());
                 fPatientId.setText(""); fDoctorId.setText(""); fNotes.setText("");
+                loadAppointments();
             } catch (HospitalException | SQLException ex) {
-                JOptionPane.showMessageDialog(this, ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(this, ex.getMessage(), "خطأ", JOptionPane.ERROR_MESSAGE);
             }
         });
 
@@ -278,7 +301,7 @@ public class HospitalGUI extends JFrame {
             int row = appointmentTable.getSelectedRow();
             if (row >= 0) {
                 int id = (int) appointmentTableModel.getValueAt(row, 0);
-                try { updateAppointmentStatus(id, "Cancelled"); }
+                try { hospitalService.updateAppointmentStatus(id, "Cancelled"); loadAppointments(); }
                 catch (SQLException ex) { JOptionPane.showMessageDialog(this, ex.getMessage()); }
             }
         });
@@ -287,7 +310,7 @@ public class HospitalGUI extends JFrame {
             int row = appointmentTable.getSelectedRow();
             if (row >= 0) {
                 int id = (int) appointmentTableModel.getValueAt(row, 0);
-                try { updateAppointmentStatus(id, "Completed"); }
+                try { hospitalService.updateAppointmentStatus(id, "Completed"); loadAppointments(); }
                 catch (SQLException ex) { JOptionPane.showMessageDialog(this, ex.getMessage()); }
             }
         });
@@ -304,7 +327,7 @@ public class HospitalGUI extends JFrame {
         return panel;
     }
 
-    // ── MEDICAL RECORD PANEL ──────────────────────────────────────────────────
+    // ── لوحة السجلات الطبية ──────────────────────────────────────────────────
     private JPanel buildRecordPanel() {
         JPanel panel = new JPanel(new BorderLayout(5, 5));
         panel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
@@ -317,45 +340,47 @@ public class HospitalGUI extends JFrame {
         JTextField fNotes       = new JTextField(20);
 
         JPanel form = new JPanel(new GridBagLayout());
-        form.setBorder(BorderFactory.createTitledBorder("Add Medical Record"));
+        form.setBorder(BorderFactory.createTitledBorder("إضافة سجل طبي"));
         GridBagConstraints g = new GridBagConstraints();
         g.insets = new Insets(4, 4, 4, 4);
-        g.anchor = GridBagConstraints.WEST;
+        g.anchor = GridBagConstraints.EAST;
 
-        g.gridx=0; g.gridy=0; form.add(new JLabel("Patient ID:"), g);
+        g.gridx=0; g.gridy=0; form.add(new JLabel("معرف المريض:"), g);
         g.gridx=1; form.add(fPatientId, g);
-        g.gridx=2; form.add(new JLabel("Doctor ID:"), g);
+        g.gridx=2; form.add(new JLabel("معرف الطبيب:"), g);
         g.gridx=3; form.add(fDoctorId, g);
 
-        g.gridx=0; g.gridy=1; form.add(new JLabel("Diagnosis:"), g);
+        g.gridx=0; g.gridy=1; form.add(new JLabel("التشخيص:"), g);
         g.gridx=1; g.gridwidth=3; form.add(fDiagnosis, g); g.gridwidth=1;
 
-        g.gridx=0; g.gridy=2; form.add(new JLabel("Treatment:"), g);
+        g.gridx=0; g.gridy=2; form.add(new JLabel("العلاج:"), g);
         g.gridx=1; g.gridwidth=3; form.add(fTreatment, g); g.gridwidth=1;
 
-        g.gridx=0; g.gridy=3; form.add(new JLabel("Medications:"), g);
+        g.gridx=0; g.gridy=3; form.add(new JLabel("الأدوية:"), g);
         g.gridx=1; g.gridwidth=3; form.add(fMedications, g); g.gridwidth=1;
 
-        g.gridx=0; g.gridy=4; form.add(new JLabel("Notes:"), g);
+        g.gridx=0; g.gridy=4; form.add(new JLabel("ملاحظات:"), g);
         g.gridx=1; g.gridwidth=3; form.add(fNotes, g); g.gridwidth=1;
 
         recordTableModel = new DefaultTableModel(
-                new String[]{"ID","Patient","Doctor","Date","Diagnosis","Treatment","Medications"}, 0);
+                new String[]{"المعرف","المريض","الطبيب","التاريخ","التشخيص","العلاج","الأدوية"}, 0);
         recordTable = new JTable(recordTableModel);
+        recordTable.applyComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
         loadRecords();
 
-        JButton btnAdd    = new JButton("Add Record");
-        JButton btnRefresh= new JButton("Refresh");
+        JButton btnAdd     = new JButton("إضافة سجل");
+        JButton btnRefresh = new JButton("تحديث");
 
         btnAdd.addActionListener(e -> {
             try {
-                addRecord(fPatientId.getText().trim(), fDoctorId.getText().trim(),
+                hospitalService.addRecord(fPatientId.getText().trim(), fDoctorId.getText().trim(),
                         fDiagnosis.getText().trim(), fTreatment.getText().trim(),
                         fMedications.getText().trim(), fNotes.getText().trim());
                 fPatientId.setText(""); fDoctorId.setText(""); fDiagnosis.setText("");
                 fTreatment.setText(""); fMedications.setText(""); fNotes.setText("");
+                loadRecords();
             } catch (HospitalException | SQLException ex) {
-                JOptionPane.showMessageDialog(this, ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(this, ex.getMessage(), "خطأ", JOptionPane.ERROR_MESSAGE);
             }
         });
 
@@ -370,7 +395,7 @@ public class HospitalGUI extends JFrame {
         return panel;
     }
 
-    // ── BILLING PANEL ─────────────────────────────────────────────────────────
+    // ── لوحة الفواتير ─────────────────────────────────────────────────────────
     private JPanel buildBillPanel() {
         JPanel panel = new JPanel(new BorderLayout(5, 5));
         panel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
@@ -382,41 +407,43 @@ public class HospitalGUI extends JFrame {
         JTextField fRoom         = new JTextField("0.0", 8);
 
         JPanel form = new JPanel(new GridBagLayout());
-        form.setBorder(BorderFactory.createTitledBorder("Generate Bill"));
+        form.setBorder(BorderFactory.createTitledBorder("إصدار فاتورة"));
         GridBagConstraints g = new GridBagConstraints();
         g.insets = new Insets(4, 4, 4, 4);
-        g.anchor = GridBagConstraints.WEST;
+        g.anchor = GridBagConstraints.EAST;
 
-        g.gridx=0; g.gridy=0; form.add(new JLabel("Patient ID:"), g);
+        g.gridx=0; g.gridy=0; form.add(new JLabel("معرف المريض:"), g);
         g.gridx=1; form.add(fPatientId, g);
 
-        g.gridx=0; g.gridy=1; form.add(new JLabel("Consultation Fee:"), g);
+        g.gridx=0; g.gridy=1; form.add(new JLabel("رسوم الكشف:"), g);
         g.gridx=1; form.add(fConsultation, g);
-        g.gridx=2; form.add(new JLabel("Medication Fee:"), g);
+        g.gridx=2; form.add(new JLabel("رسوم الأدوية:"), g);
         g.gridx=3; form.add(fMedication, g);
 
-        g.gridx=0; g.gridy=2; form.add(new JLabel("Lab Fee:"), g);
+        g.gridx=0; g.gridy=2; form.add(new JLabel("رسوم التحاليل:"), g);
         g.gridx=1; form.add(fLab, g);
-        g.gridx=2; form.add(new JLabel("Room Fee:"), g);
+        g.gridx=2; form.add(new JLabel("رسوم الغرفة:"), g);
         g.gridx=3; form.add(fRoom, g);
 
         billTableModel = new DefaultTableModel(
-                new String[]{"ID","Patient","Date","Consultation","Medication","Lab","Room","Total","Status"}, 0);
+                new String[]{"المعرف","المريض","التاريخ","الكشف","الأدوية","التحاليل","الغرفة","الإجمالي","حالة الدفع"}, 0);
         billTable = new JTable(billTableModel);
+        billTable.applyComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
         loadBills();
 
-        JButton btnGenerate = new JButton("Generate Bill");
-        JButton btnPay      = new JButton("Mark as Paid");
-        JButton btnReceipt  = new JButton("View Receipt");
-        JButton btnRefresh  = new JButton("Refresh");
+        JButton btnGenerate = new JButton("إصدار الفاتورة");
+        JButton btnPay      = new JButton("تعليم كمدفوعة");
+        JButton btnReceipt  = new JButton("عرض الإيصال");
+        JButton btnRefresh  = new JButton("تحديث");
 
         btnGenerate.addActionListener(e -> {
             try {
-                generateBill(fPatientId.getText().trim(), fConsultation.getText().trim(),
+                hospitalService.generateBill(fPatientId.getText().trim(), fConsultation.getText().trim(),
                         fMedication.getText().trim(), fLab.getText().trim(), fRoom.getText().trim());
                 fPatientId.setText("");
+                loadBills();
             } catch (HospitalException | SQLException ex) {
-                JOptionPane.showMessageDialog(this, ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(this, ex.getMessage(), "خطأ", JOptionPane.ERROR_MESSAGE);
             }
         });
 
@@ -424,7 +451,7 @@ public class HospitalGUI extends JFrame {
             int row = billTable.getSelectedRow();
             if (row >= 0) {
                 int id = (int) billTableModel.getValueAt(row, 0);
-                try { markBillPaid(id); }
+                try { hospitalService.markBillPaid(id); loadBills(); }
                 catch (SQLException ex) { JOptionPane.showMessageDialog(this, ex.getMessage()); }
             }
         });
@@ -432,17 +459,17 @@ public class HospitalGUI extends JFrame {
         btnReceipt.addActionListener(e -> {
             int row = billTable.getSelectedRow();
             if (row >= 0) {
-                String receipt = "Bill ID: " + billTableModel.getValueAt(row, 0)
-                        + "\nPatient: " + billTableModel.getValueAt(row, 1)
-                        + "\nDate: " + billTableModel.getValueAt(row, 2)
-                        + "\nConsultation: $" + billTableModel.getValueAt(row, 3)
-                        + "\nMedication: $" + billTableModel.getValueAt(row, 4)
-                        + "\nLab: $" + billTableModel.getValueAt(row, 5)
-                        + "\nRoom: $" + billTableModel.getValueAt(row, 6)
+                String receipt = "رقم الفاتورة: " + billTableModel.getValueAt(row, 0)
+                        + "\nالمريض: " + billTableModel.getValueAt(row, 1)
+                        + "\nالتاريخ: " + billTableModel.getValueAt(row, 2)
+                        + "\nرسوم الكشف: $" + billTableModel.getValueAt(row, 3)
+                        + "\nرسوم الأدوية: $" + billTableModel.getValueAt(row, 4)
+                        + "\nرسوم التحاليل: $" + billTableModel.getValueAt(row, 5)
+                        + "\nرسوم الغرفة: $" + billTableModel.getValueAt(row, 6)
                         + "\n-----------------"
-                        + "\nTOTAL: $" + billTableModel.getValueAt(row, 7)
-                        + "\nStatus: " + billTableModel.getValueAt(row, 8);
-                JOptionPane.showMessageDialog(this, receipt, "Receipt", JOptionPane.INFORMATION_MESSAGE);
+                        + "\nالإجمالي: $" + billTableModel.getValueAt(row, 7)
+                        + "\nالحالة: " + billTableModel.getValueAt(row, 8);
+                JOptionPane.showMessageDialog(this, receipt, "الإيصال", JOptionPane.INFORMATION_MESSAGE);
             }
         });
 
@@ -458,231 +485,74 @@ public class HospitalGUI extends JFrame {
         return panel;
     }
 
-    // ── DATABASE OPERATIONS ───────────────────────────────────────────────────
-
-    private void addPatient(String name, String age, String phone, String email,
-                            String blood, String allergies, String status)
-            throws HospitalException, SQLException {
-        if (name.isEmpty()) throw new HospitalException("Patient name cannot be empty.");
-        if (age.isEmpty())  throw new HospitalException("Age cannot be empty.");
-        int ageInt;
-        try { ageInt = Integer.parseInt(age); }
-        catch (NumberFormatException e) { throw new HospitalException("Age must be a number."); }
-
-        String sql = "INSERT INTO patients(name,age,phone,email,blood_type,allergies,status,room_number)"
-                   + " VALUES(?,?,?,?,?,?,?,'N/A')";
-        PreparedStatement ps = DatabaseConnection.getConnection().prepareStatement(sql);
-        ps.setString(1, name); ps.setInt(2, ageInt);
-        ps.setString(3, phone); ps.setString(4, email);
-        ps.setString(5, blood); ps.setString(6, allergies);
-        ps.setString(7, status);
-        ps.executeUpdate(); ps.close();
-        loadPatients();
-        JOptionPane.showMessageDialog(this, "Patient added successfully!", "Success", JOptionPane.INFORMATION_MESSAGE);
-    }
-
-    private void deletePatient(int id) throws SQLException {
-        PreparedStatement ps = DatabaseConnection.getConnection()
-                .prepareStatement("DELETE FROM patients WHERE id=?");
-        ps.setInt(1, id); ps.executeUpdate(); ps.close();
-        loadPatients();
-    }
+    // ── تحميل البيانات (عبر HospitalService فقط، بدون أي SQL هنا) ──────────────
 
     private void loadPatients() {
         patientTableModel.setRowCount(0);
-        try {
-            Statement st = DatabaseConnection.getConnection().createStatement();
-            ResultSet rs = st.executeQuery("SELECT * FROM patients");
+        try (ResultSet rs = hospitalService.getAllPatients()) {
             while (rs.next()) {
                 patientTableModel.addRow(new Object[]{
                     rs.getInt("id"), rs.getString("name"), rs.getInt("age"),
                     rs.getString("phone"), rs.getString("blood_type"),
-                    rs.getString("status"), rs.getString("room_number")
+                    ar(rs.getString("status")), rs.getString("room_number")
                 });
             }
-            rs.close(); st.close();
         } catch (SQLException e) { System.err.println(e.getMessage()); }
-    }
-
-    private void addDoctor(String name, String age, String phone, String email,
-                           String specialty, String license)
-            throws HospitalException, SQLException {
-        if (name.isEmpty())    throw new HospitalException("Doctor name cannot be empty.");
-        if (license.isEmpty()) throw new HospitalException("License number cannot be empty.");
-        int ageInt;
-        try { ageInt = Integer.parseInt(age); }
-        catch (NumberFormatException e) { throw new HospitalException("Age must be a number."); }
-
-        String sql = "INSERT INTO doctors(name,age,phone,email,specialty,license_number,available)"
-                   + " VALUES(?,?,?,?,?,?,1)";
-        PreparedStatement ps = DatabaseConnection.getConnection().prepareStatement(sql);
-        ps.setString(1, name); ps.setInt(2, ageInt);
-        ps.setString(3, phone); ps.setString(4, email);
-        ps.setString(5, specialty); ps.setString(6, license);
-        ps.executeUpdate(); ps.close();
-        loadDoctors();
-        JOptionPane.showMessageDialog(this, "Doctor added successfully!", "Success", JOptionPane.INFORMATION_MESSAGE);
-    }
-
-    private void deleteDoctor(int id) throws SQLException {
-        PreparedStatement ps = DatabaseConnection.getConnection()
-                .prepareStatement("DELETE FROM doctors WHERE id=?");
-        ps.setInt(1, id); ps.executeUpdate(); ps.close();
-        loadDoctors();
     }
 
     private void loadDoctors() {
         doctorTableModel.setRowCount(0);
-        try {
-            Statement st = DatabaseConnection.getConnection().createStatement();
-            ResultSet rs = st.executeQuery("SELECT * FROM doctors");
+        try (ResultSet rs = hospitalService.getAllDoctors()) {
             while (rs.next()) {
                 doctorTableModel.addRow(new Object[]{
                     rs.getInt("id"), rs.getString("name"), rs.getInt("age"),
                     rs.getString("specialty"), rs.getString("license_number"),
-                    rs.getInt("available") == 1 ? "Yes" : "No"
+                    rs.getInt("available") == 1 ? "نعم" : "لا"
                 });
             }
-            rs.close(); st.close();
         } catch (SQLException e) { System.err.println(e.getMessage()); }
-    }
-
-    private void scheduleAppointment(String patientIdStr, String doctorIdStr,
-                                     String date, String time, String notes)
-            throws HospitalException, SQLException {
-        if (patientIdStr.isEmpty()) throw new HospitalException("Patient ID is required.");
-        if (doctorIdStr.isEmpty())  throw new HospitalException("Doctor ID is required.");
-        int pid, did;
-        try { pid = Integer.parseInt(patientIdStr); did = Integer.parseInt(doctorIdStr); }
-        catch (NumberFormatException e) { throw new HospitalException("IDs must be numbers."); }
-
-        String sql = "INSERT INTO appointments(patient_id,doctor_id,date,time,status,notes)"
-                   + " VALUES(?,?,?,?,'Scheduled',?)";
-        PreparedStatement ps = DatabaseConnection.getConnection().prepareStatement(sql);
-        ps.setInt(1, pid); ps.setInt(2, did);
-        ps.setString(3, date); ps.setString(4, time); ps.setString(5, notes);
-        ps.executeUpdate(); ps.close();
-        loadAppointments();
-    }
-
-    private void updateAppointmentStatus(int id, String status) throws SQLException {
-        PreparedStatement ps = DatabaseConnection.getConnection()
-                .prepareStatement("UPDATE appointments SET status=? WHERE appointment_id=?");
-        ps.setString(1, status); ps.setInt(2, id);
-        ps.executeUpdate(); ps.close();
-        loadAppointments();
     }
 
     private void loadAppointments() {
         appointmentTableModel.setRowCount(0);
-        try {
-            String sql = "SELECT a.appointment_id, p.name, d.name, a.date, a.time, a.status, a.notes "
-                       + "FROM appointments a "
-                       + "JOIN patients p ON a.patient_id = p.id "
-                       + "JOIN doctors  d ON a.doctor_id  = d.id";
-            Statement st = DatabaseConnection.getConnection().createStatement();
-            ResultSet rs = st.executeQuery(sql);
+        try (ResultSet rs = hospitalService.getAllAppointmentsJoined()) {
             while (rs.next()) {
                 appointmentTableModel.addRow(new Object[]{
-                    rs.getInt(1), rs.getString(2), "Dr. " + rs.getString(3),
-                    rs.getString(4), rs.getString(5), rs.getString(6), rs.getString(7)
+                    rs.getInt(1), rs.getString(2), "د. " + rs.getString(3),
+                    rs.getString(4), rs.getString(5), ar(rs.getString(6)), rs.getString(7)
                 });
             }
-            rs.close(); st.close();
         } catch (SQLException e) { System.err.println(e.getMessage()); }
-    }
-
-    private void addRecord(String patientIdStr, String doctorIdStr, String diagnosis,
-                           String treatment, String medications, String notes)
-            throws HospitalException, SQLException {
-        if (patientIdStr.isEmpty()) throw new HospitalException("Patient ID is required.");
-        if (diagnosis.isEmpty())    throw new HospitalException("Diagnosis cannot be empty.");
-        int pid, did;
-        try { pid = Integer.parseInt(patientIdStr); did = Integer.parseInt(doctorIdStr); }
-        catch (NumberFormatException e) { throw new HospitalException("IDs must be numbers."); }
-
-        String sql = "INSERT INTO medical_records(patient_id,doctor_id,date,diagnosis,treatment,medications,notes)"
-                   + " VALUES(?,?,date('now'),?,?,?,?)";
-        PreparedStatement ps = DatabaseConnection.getConnection().prepareStatement(sql);
-        ps.setInt(1, pid); ps.setInt(2, did);
-        ps.setString(3, diagnosis); ps.setString(4, treatment);
-        ps.setString(5, medications); ps.setString(6, notes);
-        ps.executeUpdate(); ps.close();
-        loadRecords();
     }
 
     private void loadRecords() {
         recordTableModel.setRowCount(0);
-        try {
-            String sql = "SELECT r.record_id, p.name, d.name, r.date, r.diagnosis, r.treatment, r.medications "
-                       + "FROM medical_records r "
-                       + "JOIN patients p ON r.patient_id = p.id "
-                       + "JOIN doctors  d ON r.doctor_id  = d.id";
-            Statement st = DatabaseConnection.getConnection().createStatement();
-            ResultSet rs = st.executeQuery(sql);
+        try (ResultSet rs = hospitalService.getAllRecordsJoined()) {
             while (rs.next()) {
                 recordTableModel.addRow(new Object[]{
-                    rs.getInt(1), rs.getString(2), "Dr. " + rs.getString(3),
+                    rs.getInt(1), rs.getString(2), "د. " + rs.getString(3),
                     rs.getString(4), rs.getString(5), rs.getString(6), rs.getString(7)
                 });
             }
-            rs.close(); st.close();
         } catch (SQLException e) { System.err.println(e.getMessage()); }
-    }
-
-    private void generateBill(String patientIdStr, String consultation,
-                               String medication, String lab, String room)
-            throws HospitalException, SQLException {
-        if (patientIdStr.isEmpty()) throw new HospitalException("Patient ID is required.");
-        int pid;
-        try { pid = Integer.parseInt(patientIdStr); }
-        catch (NumberFormatException e) { throw new HospitalException("Patient ID must be a number."); }
-        double c, m, l, r;
-        try {
-            c = Double.parseDouble(consultation); m = Double.parseDouble(medication);
-            l = Double.parseDouble(lab);          r = Double.parseDouble(room);
-        } catch (NumberFormatException e) { throw new HospitalException("Fees must be numbers."); }
-
-        String sql = "INSERT INTO bills(patient_id,bill_date,consultation_fee,medication_fee,lab_fee,room_fee,payment_status)"
-                   + " VALUES(?,date('now'),?,?,?,?,'Unpaid')";
-        PreparedStatement ps = DatabaseConnection.getConnection().prepareStatement(sql);
-        ps.setInt(1, pid); ps.setDouble(2, c); ps.setDouble(3, m);
-        ps.setDouble(4, l); ps.setDouble(5, r);
-        ps.executeUpdate(); ps.close();
-        loadBills();
-    }
-
-    private void markBillPaid(int id) throws SQLException {
-        PreparedStatement ps = DatabaseConnection.getConnection()
-                .prepareStatement("UPDATE bills SET payment_status='Paid' WHERE bill_id=?");
-        ps.setInt(1, id); ps.executeUpdate(); ps.close();
-        loadBills();
     }
 
     private void loadBills() {
         billTableModel.setRowCount(0);
-        try {
-            String sql = "SELECT b.bill_id, p.name, b.bill_date, b.consultation_fee, "
-                       + "b.medication_fee, b.lab_fee, b.room_fee, "
-                       + "(b.consultation_fee+b.medication_fee+b.lab_fee+b.room_fee) AS total, "
-                       + "b.payment_status "
-                       + "FROM bills b JOIN patients p ON b.patient_id = p.id";
-            Statement st = DatabaseConnection.getConnection().createStatement();
-            ResultSet rs = st.executeQuery(sql);
+        try (ResultSet rs = hospitalService.getAllBillsJoined()) {
             while (rs.next()) {
                 billTableModel.addRow(new Object[]{
                     rs.getInt(1), rs.getString(2), rs.getString(3),
                     rs.getDouble(4), rs.getDouble(5), rs.getDouble(6),
-                    rs.getDouble(7), rs.getDouble(8), rs.getString(9)
+                    rs.getDouble(7), rs.getDouble(8), ar(rs.getString(9))
                 });
             }
-            rs.close(); st.close();
         } catch (SQLException e) { System.err.println(e.getMessage()); }
     }
 
     /**
-     * Application entry point.
-     * @param args command-line arguments
+     * نقطة بداية تشغيل التطبيق.
+     * @param args معطيات سطر الأوامر
      */
     public static void main(String[] args) {
         SwingUtilities.invokeLater(HospitalGUI::new);
