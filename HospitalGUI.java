@@ -67,6 +67,7 @@ public class HospitalGUI extends JFrame {
         tabs.addTab("المواعيد",     buildAppointmentPanel());
         tabs.addTab("السجلات الطبية", buildRecordPanel());
         tabs.addTab("الفواتير",     buildBillPanel());
+        tabs.addTab("التقارير",     new ReportsPanel());
         add(tabs);
     }
 
@@ -130,6 +131,7 @@ public class HospitalGUI extends JFrame {
         loadPatients();
 
         JButton btnAdd     = new JButton("إضافة مريض");
+        JButton btnEdit    = new JButton("تعديل");
         JButton btnDelete  = new JButton("حذف");
         JButton btnRefresh = new JButton("تحديث");
 
@@ -148,6 +150,8 @@ public class HospitalGUI extends JFrame {
             }
         });
 
+        btnEdit.addActionListener(e -> editSelectedPatient());
+
         btnDelete.addActionListener(e -> {
             int row = patientTable.getSelectedRow();
             if (row >= 0) {
@@ -160,7 +164,7 @@ public class HospitalGUI extends JFrame {
         btnRefresh.addActionListener(e -> loadPatients());
 
         JPanel btnPanel = new JPanel();
-        btnPanel.add(btnAdd); btnPanel.add(btnDelete); btnPanel.add(btnRefresh);
+        btnPanel.add(btnAdd); btnPanel.add(btnEdit); btnPanel.add(btnDelete); btnPanel.add(btnRefresh);
 
         panel.add(form, BorderLayout.NORTH);
         panel.add(new JScrollPane(patientTable), BorderLayout.CENTER);
@@ -208,6 +212,7 @@ public class HospitalGUI extends JFrame {
         loadDoctors();
 
         JButton btnAdd     = new JButton("إضافة طبيب");
+        JButton btnEdit    = new JButton("تعديل");
         JButton btnDelete  = new JButton("حذف");
         JButton btnRefresh = new JButton("تحديث");
 
@@ -225,6 +230,8 @@ public class HospitalGUI extends JFrame {
             }
         });
 
+        btnEdit.addActionListener(e -> editSelectedDoctor());
+
         btnDelete.addActionListener(e -> {
             int row = doctorTable.getSelectedRow();
             if (row >= 0) {
@@ -237,7 +244,7 @@ public class HospitalGUI extends JFrame {
         btnRefresh.addActionListener(e -> loadDoctors());
 
         JPanel btnPanel = new JPanel();
-        btnPanel.add(btnAdd); btnPanel.add(btnDelete); btnPanel.add(btnRefresh);
+        btnPanel.add(btnAdd); btnPanel.add(btnEdit); btnPanel.add(btnDelete); btnPanel.add(btnRefresh);
 
         panel.add(form, BorderLayout.NORTH);
         panel.add(new JScrollPane(doctorTable), BorderLayout.CENTER);
@@ -282,6 +289,7 @@ public class HospitalGUI extends JFrame {
         loadAppointments();
 
         JButton btnAdd      = new JButton("جدولة");
+        JButton btnEdit     = new JButton("تعديل");
         JButton btnCancel   = new JButton("إلغاء");
         JButton btnComplete = new JButton("إتمام");
         JButton btnRefresh  = new JButton("تحديث");
@@ -296,6 +304,8 @@ public class HospitalGUI extends JFrame {
                 JOptionPane.showMessageDialog(this, ex.getMessage(), "خطأ", JOptionPane.ERROR_MESSAGE);
             }
         });
+
+        btnEdit.addActionListener(e -> editSelectedAppointment());
 
         btnCancel.addActionListener(e -> {
             int row = appointmentTable.getSelectedRow();
@@ -318,7 +328,7 @@ public class HospitalGUI extends JFrame {
         btnRefresh.addActionListener(e -> loadAppointments());
 
         JPanel btnPanel = new JPanel();
-        btnPanel.add(btnAdd); btnPanel.add(btnCancel);
+        btnPanel.add(btnAdd); btnPanel.add(btnEdit); btnPanel.add(btnCancel);
         btnPanel.add(btnComplete); btnPanel.add(btnRefresh);
 
         panel.add(form, BorderLayout.NORTH);
@@ -369,6 +379,7 @@ public class HospitalGUI extends JFrame {
         loadRecords();
 
         JButton btnAdd     = new JButton("إضافة سجل");
+        JButton btnEdit    = new JButton("تعديل");
         JButton btnRefresh = new JButton("تحديث");
 
         btnAdd.addActionListener(e -> {
@@ -384,10 +395,12 @@ public class HospitalGUI extends JFrame {
             }
         });
 
+        btnEdit.addActionListener(e -> editSelectedRecord());
+
         btnRefresh.addActionListener(e -> loadRecords());
 
         JPanel btnPanel = new JPanel();
-        btnPanel.add(btnAdd); btnPanel.add(btnRefresh);
+        btnPanel.add(btnAdd); btnPanel.add(btnEdit); btnPanel.add(btnRefresh);
 
         panel.add(form, BorderLayout.NORTH);
         panel.add(new JScrollPane(recordTable), BorderLayout.CENTER);
@@ -432,6 +445,7 @@ public class HospitalGUI extends JFrame {
         loadBills();
 
         JButton btnGenerate = new JButton("إصدار الفاتورة");
+        JButton btnEdit      = new JButton("تعديل");
         JButton btnPay      = new JButton("تعليم كمدفوعة");
         JButton btnReceipt  = new JButton("عرض الإيصال");
         JButton btnRefresh  = new JButton("تحديث");
@@ -446,6 +460,8 @@ public class HospitalGUI extends JFrame {
                 JOptionPane.showMessageDialog(this, ex.getMessage(), "خطأ", JOptionPane.ERROR_MESSAGE);
             }
         });
+
+        btnEdit.addActionListener(e -> editSelectedBill());
 
         btnPay.addActionListener(e -> {
             int row = billTable.getSelectedRow();
@@ -476,13 +492,177 @@ public class HospitalGUI extends JFrame {
         btnRefresh.addActionListener(e -> loadBills());
 
         JPanel btnPanel = new JPanel();
-        btnPanel.add(btnGenerate); btnPanel.add(btnPay);
+        btnPanel.add(btnGenerate); btnPanel.add(btnEdit); btnPanel.add(btnPay);
         btnPanel.add(btnReceipt); btnPanel.add(btnRefresh);
 
         panel.add(form, BorderLayout.NORTH);
         panel.add(new JScrollPane(billTable), BorderLayout.CENTER);
         panel.add(btnPanel, BorderLayout.SOUTH);
         return panel;
+    }
+
+    // ── نوافذ التعديل (Edit Dialogs) ──────────────────────────────────────────
+
+    /** يعرض نافذة تعديل حقول نصية بسيطة ويرجع القيم الجديدة، أو null لو أُلغي. */
+    private String[] showEditFieldsDialog(String title, String[] labels, String[] initialValues) {
+        JPanel panel = new JPanel(new GridLayout(labels.length, 2, 6, 6));
+        panel.applyComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
+        JTextField[] fields = new JTextField[labels.length];
+        for (int i = 0; i < labels.length; i++) {
+            panel.add(new JLabel(labels[i]));
+            fields[i] = new JTextField(initialValues[i]);
+            panel.add(fields[i]);
+        }
+        int result = JOptionPane.showConfirmDialog(this, panel, title,
+                JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+        if (result != JOptionPane.OK_OPTION) return null;
+        String[] out = new String[labels.length];
+        for (int i = 0; i < labels.length; i++) out[i] = fields[i].getText().trim();
+        return out;
+    }
+
+    /** يعدّل بيانات المريض المحدد بالجدول. */
+    private void editSelectedPatient() {
+        int row = patientTable.getSelectedRow();
+        if (row < 0) {
+            JOptionPane.showMessageDialog(this, "اختر مريضًا أولاً من الجدول.", "تنبيه", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        int id = (int) patientTableModel.getValueAt(row, 0);
+        try (ResultSet rs = hospitalService.getPatientById(id)) {
+            if (!rs.next()) return;
+
+            JTextField fName    = new JTextField(rs.getString("name"));
+            JTextField fAge     = new JTextField(String.valueOf(rs.getInt("age")));
+            JTextField fPhone   = new JTextField(rs.getString("phone"));
+            JTextField fEmail   = new JTextField(rs.getString("email"));
+            JTextField fBlood   = new JTextField(rs.getString("blood_type"));
+            JTextField fAllergy = new JTextField(rs.getString("allergies"));
+            JComboBox<String> fStatus = new JComboBox<>(new String[]{"مريض خارجي", "مريض داخلي"});
+            fStatus.setSelectedIndex("Inpatient".equals(rs.getString("status")) ? 1 : 0);
+
+            JPanel panel = new JPanel(new GridLayout(7, 2, 6, 6));
+            panel.applyComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
+            panel.add(new JLabel("الاسم:"));            panel.add(fName);
+            panel.add(new JLabel("العمر:"));             panel.add(fAge);
+            panel.add(new JLabel("الهاتف:"));            panel.add(fPhone);
+            panel.add(new JLabel("البريد الإلكتروني:")); panel.add(fEmail);
+            panel.add(new JLabel("فصيلة الدم:"));        panel.add(fBlood);
+            panel.add(new JLabel("الحساسية:"));          panel.add(fAllergy);
+            panel.add(new JLabel("الحالة:"));            panel.add(fStatus);
+
+            int result = JOptionPane.showConfirmDialog(this, panel, "تعديل بيانات المريض",
+                    JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+            if (result == JOptionPane.OK_OPTION) {
+                String status = "مريض داخلي".equals(fStatus.getSelectedItem()) ? "Inpatient" : "Outpatient";
+                hospitalService.updatePatient(id, fName.getText().trim(), fAge.getText().trim(),
+                        fPhone.getText().trim(), fEmail.getText().trim(),
+                        fBlood.getText().trim(), fAllergy.getText().trim(), status);
+                loadPatients();
+            }
+        } catch (HospitalException | SQLException ex) {
+            JOptionPane.showMessageDialog(this, ex.getMessage(), "خطأ", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    /** يعدّل بيانات الطبيب المحدد بالجدول. */
+    private void editSelectedDoctor() {
+        int row = doctorTable.getSelectedRow();
+        if (row < 0) {
+            JOptionPane.showMessageDialog(this, "اختر طبيبًا أولاً من الجدول.", "تنبيه", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        int id = (int) doctorTableModel.getValueAt(row, 0);
+        try (ResultSet rs = hospitalService.getDoctorById(id)) {
+            if (!rs.next()) return;
+            String[] labels = {"الاسم:", "العمر:", "الهاتف:", "البريد الإلكتروني:", "التخصص:", "رقم الترخيص:"};
+            String[] initial = {
+                rs.getString("name"), String.valueOf(rs.getInt("age")),
+                rs.getString("phone"), rs.getString("email"),
+                rs.getString("specialty"), rs.getString("license_number")
+            };
+            String[] edited = showEditFieldsDialog("تعديل بيانات الطبيب", labels, initial);
+            if (edited != null) {
+                hospitalService.updateDoctor(id, edited[0], edited[1], edited[2], edited[3], edited[4], edited[5]);
+                loadDoctors();
+            }
+        } catch (HospitalException | SQLException ex) {
+            JOptionPane.showMessageDialog(this, ex.getMessage(), "خطأ", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    /** يعدّل تاريخ/وقت/ملاحظات الموعد المحدد بالجدول. */
+    private void editSelectedAppointment() {
+        int row = appointmentTable.getSelectedRow();
+        if (row < 0) {
+            JOptionPane.showMessageDialog(this, "اختر موعدًا أولاً من الجدول.", "تنبيه", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        int id = (int) appointmentTableModel.getValueAt(row, 0);
+        try (ResultSet rs = hospitalService.getAppointmentById(id)) {
+            if (!rs.next()) return;
+            String[] labels = {"التاريخ (YYYY-MM-DD):", "الوقت (HH:MM):", "ملاحظات:"};
+            String[] initial = {rs.getString("date"), rs.getString("time"), rs.getString("notes")};
+            String[] edited = showEditFieldsDialog("تعديل الموعد", labels, initial);
+            if (edited != null) {
+                hospitalService.updateAppointment(id, edited[0], edited[1], edited[2]);
+                loadAppointments();
+            }
+        } catch (SQLException ex) {
+            JOptionPane.showMessageDialog(this, ex.getMessage(), "خطأ", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    /** يعدّل بيانات السجل الطبي المحدد بالجدول. */
+    private void editSelectedRecord() {
+        int row = recordTable.getSelectedRow();
+        if (row < 0) {
+            JOptionPane.showMessageDialog(this, "اختر سجلًا أولاً من الجدول.", "تنبيه", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        int id = (int) recordTableModel.getValueAt(row, 0);
+        try (ResultSet rs = hospitalService.getRecordById(id)) {
+            if (!rs.next()) return;
+            String[] labels = {"التشخيص:", "العلاج:", "الأدوية:", "ملاحظات:"};
+            String[] initial = {
+                rs.getString("diagnosis"), rs.getString("treatment"),
+                rs.getString("medications"), rs.getString("notes")
+            };
+            String[] edited = showEditFieldsDialog("تعديل السجل الطبي", labels, initial);
+            if (edited != null) {
+                hospitalService.updateRecord(id, edited[0], edited[1], edited[2], edited[3]);
+                loadRecords();
+            }
+        } catch (HospitalException | SQLException ex) {
+            JOptionPane.showMessageDialog(this, ex.getMessage(), "خطأ", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    /** يعدّل رسوم الفاتورة المحددة بالجدول. */
+    private void editSelectedBill() {
+        int row = billTable.getSelectedRow();
+        if (row < 0) {
+            JOptionPane.showMessageDialog(this, "اختر فاتورة أولاً من الجدول.", "تنبيه", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        int id = (int) billTableModel.getValueAt(row, 0);
+        try (ResultSet rs = hospitalService.getBillById(id)) {
+            if (!rs.next()) return;
+            String[] labels = {"رسوم الكشف:", "رسوم الأدوية:", "رسوم التحاليل:", "رسوم الغرفة:"};
+            String[] initial = {
+                String.valueOf(rs.getDouble("consultation_fee")),
+                String.valueOf(rs.getDouble("medication_fee")),
+                String.valueOf(rs.getDouble("lab_fee")),
+                String.valueOf(rs.getDouble("room_fee"))
+            };
+            String[] edited = showEditFieldsDialog("تعديل الفاتورة", labels, initial);
+            if (edited != null) {
+                hospitalService.updateBill(id, edited[0], edited[1], edited[2], edited[3]);
+                loadBills();
+            }
+        } catch (HospitalException | SQLException ex) {
+            JOptionPane.showMessageDialog(this, ex.getMessage(), "خطأ", JOptionPane.ERROR_MESSAGE);
+        }
     }
 
     // ── تحميل البيانات (عبر HospitalService فقط، بدون أي SQL هنا) ──────────────
