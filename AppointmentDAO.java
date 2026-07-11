@@ -36,6 +36,36 @@ public class AppointmentDAO {
     }
 
     /**
+     * يجلب موعداً واحداً بالمعرف (لاستخدامه بنموذج التعديل).
+     * @param id معرف الموعد
+     * @return ResultSet يحتوي على صف الموعد (لو موجود)
+     * @throws SQLException إذا فشلت عملية قاعدة البيانات
+     */
+    public ResultSet findById(int id) throws SQLException {
+        PreparedStatement ps = DatabaseConnection.getConnection()
+                .prepareStatement("SELECT * FROM appointments WHERE appointment_id=?");
+        ps.setInt(1, id);
+        return ps.executeQuery();
+    }
+
+    /**
+     * يحدّث تاريخ/وقت/ملاحظات موعد موجود (بدون تغيير المريض أو الطبيب أو الحالة).
+     * @param id معرف الموعد
+     * @param date التاريخ الجديد
+     * @param time الوقت الجديد
+     * @param notes الملاحظات الجديدة
+     * @throws SQLException إذا فشلت عملية قاعدة البيانات
+     */
+    public void update(int id, String date, String time, String notes) throws SQLException {
+        String sql = "UPDATE appointments SET date=?, time=?, notes=? WHERE appointment_id=?";
+        try (PreparedStatement ps = DatabaseConnection.getConnection().prepareStatement(sql)) {
+            ps.setString(1, date); ps.setString(2, time); ps.setString(3, notes);
+            ps.setInt(4, id);
+            ps.executeUpdate();
+        }
+    }
+
+    /**
      * يحدث حالة موعد.
      * @param id معرف الموعد
      * @param status الحالة الجديدة
